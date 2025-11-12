@@ -1,6 +1,31 @@
 import { useEffect, useState } from 'react';
 import {
-  Box, Typography, Card, CardContent, Grid, Avatar, Stack, Badge, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Chip, TextField, InputAdornment
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  Grid,
+  Avatar,
+  Stack,
+  Badge,
+  IconButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Button,
+  Chip,
+  TextField,
+  InputAdornment,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Alert,
+  CircularProgress
 } from '@mui/material';
 import { blue, orange, green, red } from '@mui/material/colors';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -25,6 +50,25 @@ interface Assignment {
   createdBy?: { name: string; email: string };
 }
 
+type SimilarityCategory = 'none' | 'low' | 'medium' | 'high';
+
+interface SimilarityMatch {
+  submissionId: string;
+  score: number;
+  student: { _id: string; name: string; email: string } | null;
+}
+
+interface SimilarityAlert {
+  _id: string;
+  student: { _id: string; name: string; email: string };
+  submittedAt: string;
+  similarityReport: {
+    score: number;
+    category: SimilarityCategory;
+    matches: SimilarityMatch[];
+  };
+}
+
 const AssignmentsPage = () => {
   const { user, token, logout } = useAuth();
   const navigate = useNavigate();
@@ -33,6 +77,10 @@ const AssignmentsPage = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [hasUnread, setHasUnread] = useState(true);
+  const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [similarityAlerts, setSimilarityAlerts] = useState<SimilarityAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchAssignments = async () => {
@@ -102,6 +150,47 @@ const AssignmentsPage = () => {
 
   // --- User Avatar Helper ---
   const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase();
+
+  const renderSimilarityBadge = (category: SimilarityCategory) => {
+    switch (category) {
+      case 'high':
+        return <Chip label="High" color="error" size="small" />;
+      case 'medium':
+        return <Chip label="Medium" color="warning" size="small" />;
+      case 'low':
+        return <Chip label="Low" color="info" size="small" />;
+      default:
+        return <Chip label="None" color="default" size="small" />;
+    }
+  };
+
+  const formatScore = (score: number) => `${Math.round(score * 100)}%`;
+
+  const loadSimilarityAlerts = async (assignment: Assignment) => {
+    if (!token) return;
+    setSelectedAssignment(assignment);
+    setAlertsLoading(true);
+    setAlertsError(null);
+    try {
+      const res = await axios.get(`/api/submissions/assignment/${assignment._id || assignment.id}/flags`, {
+        baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSimilarityAlerts(res.data.data.submissions || []);
+    } catch (error: any) {
+      setSimilarityAlerts([]);
+      setAlertsError(error?.response?.data?.message || 'Unable to load similarity data');
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  const handleCloseSimilarityDialog = () => {
+    setSelectedAssignment(null);
+    setSimilarityAlerts([]);
+    setAlertsLoading(false);
+    setAlertsError(null);
+  };
 
   // Filter assignments based on search term
   const filteredAssignments = assignments.filter(assignment =>
@@ -286,7 +375,24 @@ const AssignmentsPage = () => {
                     <Chip label={status} size="small" sx={{ fontWeight: 600, bgcolor: bg, color: color }} />
                   </TableCell>
                   <TableCell>
-                    <Button component={RouterLink} to={`/assignments/${a._id || a.id}`} size="small" sx={{ textTransform: 'none', fontWeight: 500 }}>View</Button>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        component={RouterLink}
+                        to={`/assignments/${a._id || a.id}`}
+                        size="small"
+                        sx={{ textTransform: 'none', fontWeight: 500 }}
+                      >
+                        View
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        sx={{ textTransform: 'none', fontWeight: 500 }}
+                        onClick={() => loadSimilarityAlerts(a)}
+                      >
+                        Similarity
+                      </Button>
+                    </Stack>
                   </TableCell>
                 </TableRow>
               );
@@ -305,6 +411,94 @@ const AssignmentsPage = () => {
           </Typography>
         </Paper>
       )}
+
+      <Dialog
+        open={Boolean(selectedAssignment)}
+        onClose={handleCloseSimilarityDialog}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>
+          {selectedAssignment ? `Similarity – ${selectedAssignment.title}` : 'Similarity'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {alertsLoading ? (
+            <Box display="flex" justifyContent="center" py={4}>
+              <CircularProgress />
+            </Box>
+          ) : alertsError ? (
+            <Alert severity="error">{alertsError}</Alert>
+          ) : similarityAlerts.length === 0 ? (
+            <Typography color="text.secondary">
+              No flagged submissions for this assignment.
+            </Typography>
+          ) : (
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Student</TableCell>
+                  <TableCell>Submitted</TableCell>
+                  <TableCell>Similarity</TableCell>
+                  <TableCell>Matches</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {similarityAlerts.map(alert => (
+                  <TableRow key={alert._id}>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight="medium">
+                        {alert.student?.name || '—'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {alert.student?.email || ''}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {new Date(alert.submittedAt).toLocaleDateString()}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(alert.submittedAt).toLocaleTimeString()}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        {renderSimilarityBadge(alert.similarityReport?.category || 'none')}
+                        <Typography variant="body2" color="text.secondary">
+                          {formatScore(alert.similarityReport?.score || 0)}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      {alert.similarityReport?.matches?.length ? (
+                        <Box display="flex" flexDirection="column" gap={0.5}>
+                          {alert.similarityReport.matches.map(match => (
+                            <Box key={match.submissionId} display="flex" justifyContent="space-between">
+                              <Typography variant="body2">
+                                {match.student?.name || 'Unknown'}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                {formatScore(match.score)}
+                              </Typography>
+                            </Box>
+                          ))}
+                        </Box>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          No recorded matches.
+                        </Typography>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseSimilarityDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
