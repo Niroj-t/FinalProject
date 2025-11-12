@@ -1,0 +1,11 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <!-- Book symbol -->
+  <rect x="12" y="16" width="20" height="32" rx="2" fill="#2D6CDF"/>
+  <rect x="32" y="16" width="20" height="32" rx="2" fill="#4A8CFF"/>
+  
+  <!-- Sync arrows -->
+  <path d="M22 12c0-2.2 1.8-4 4-4h12" stroke="#2D6CDF" stroke-width="2" stroke-linecap="round"/>
+  <path d="M42 52c0 2.2-1.8 4-4 4H26" stroke="#4A8CFF" stroke-width="2" stroke-linecap="round"/>
+  <path d="M37 8l3 3-3 3" fill="#2D6CDF"/>
+  <path d="M27 56l-3-3 3-3" fill="#4A8CFF"/>
+</svg>
