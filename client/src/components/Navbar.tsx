@@ -1,9 +1,10 @@
 import { AppBar, Toolbar, Typography, Box, Button, IconButton, Dialog } from '@mui/material';
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, Link as RouterLink } from 'react-router-dom';
 import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
 import CloseIcon from '@mui/icons-material/Close';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 import logo from '../assets/react.svg';
 
 interface NavbarProps {
@@ -51,9 +52,20 @@ export default function Navbar({ user, onLogout }: NavbarProps) {
         )}
         <Box>
           {user ? (
-            <Button color="error" variant="outlined" onClick={onLogout}>
-              Logout
-            </Button>
+            <>
+              <Button 
+                component={RouterLink} 
+                to="/notifications" 
+                color="inherit" 
+                sx={{ mr: 1 }}
+                startIcon={<NotificationsIcon />}
+              >
+                Notifications
+              </Button>
+              <Button color="error" variant="outlined" onClick={onLogout}>
+                Logout
+              </Button>
+            </>
           ) : (
             <Button color="primary" variant="outlined" sx={{ mr: 1 }} onClick={() => setOpenLogin(true)}>
               Login

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Box, Typography, Card, CardContent, Grid, Avatar, Stack, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Alert
+  Box, Typography, Card, CardContent, Grid, Avatar, Stack, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Alert, Badge, Menu, MenuItem, ListItemIcon, ListItemText
 } from '@mui/material';
 import { blue, orange, green, red } from '@mui/material/colors';
 import AssignmentIcon from '@mui/icons-material/Assignment';
@@ -9,6 +9,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import LogoutIcon from '@mui/icons-material/Logout';
 import CloseIcon from '@mui/icons-material/Close';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
@@ -46,6 +47,10 @@ const DashboardPage = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [openCreate, setOpenCreate] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationAnchorEl, setNotificationAnchorEl] = useState<null | HTMLElement>(null);
+  const [notificationLoading, setNotificationLoading] = useState(false);
   
   // Password change modal state
   const [openPasswordModal, setOpenPasswordModal] = useState(false);
@@ -124,6 +129,58 @@ const DashboardPage = () => {
     }
   }, [token, user]);
 
+  // Fetch notifications for both teacher and student
+  const fetchNotifications = async () => {
+    if (!token || !user) return;
+    setNotificationLoading(true);
+    try {
+      const res = await axios.get('/api/notifications?limit=10', {
+        baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotifications(res.data.data.notifications || []);
+      setUnreadCount(res.data.data.unreadCount || 0);
+    } catch {
+      setNotifications([]);
+      setUnreadCount(0);
+    } finally {
+      setNotificationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token && user) {
+      fetchNotifications();
+    }
+  }, [token, user]);
+
+  const handleNotificationClick = (event: React.MouseEvent<HTMLElement>) => {
+    setNotificationAnchorEl(event.currentTarget);
+    fetchNotifications();
+  };
+
+  const handleNotificationClose = () => {
+    setNotificationAnchorEl(null);
+  };
+
+  const handleMarkAsRead = async (notificationId: string) => {
+    try {
+      await axios.put(`/api/notifications/${notificationId}/read`, {}, {
+        baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setNotifications(notifications.map(n => n._id === notificationId ? { ...n, read: true } : n));
+      setUnreadCount(Math.max(0, unreadCount - 1));
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
+  };
+
+  const handleViewAllNotifications = () => {
+    handleNotificationClose();
+    navigate('/notifications');
+  };
+
   if (!user) return null;
 
   // --- User Avatar Helper ---
@@ -176,6 +233,81 @@ const DashboardPage = () => {
               <Button component={RouterLink} to="/dashboard" color="primary" sx={{ fontWeight: 700, borderBottom: '2px solid', borderColor: 'primary.main', borderRadius: 0 }}>Dashboard</Button>
               <Button color="inherit" sx={{ fontWeight: 500 }} onClick={() => setOpenCreate(true)}>Create Assignment</Button>
               <Button component={RouterLink} to="/assignments" color="inherit" sx={{ fontWeight: 500 }}>Assignments</Button>
+              <Badge badgeContent={unreadCount} color="error">
+                <Button 
+                  onClick={handleNotificationClick}
+                  color="inherit" 
+                  sx={{ fontWeight: 500 }} 
+                  startIcon={<NotificationsIcon />}
+                >
+                  Notifications
+                </Button>
+              </Badge>
+              <Menu
+                anchorEl={notificationAnchorEl}
+                open={Boolean(notificationAnchorEl)}
+                onClose={handleNotificationClose}
+                PaperProps={{
+                  sx: { width: 400, maxHeight: 500 }
+                }}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+              >
+                <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
+                  <Typography variant="h6" fontWeight={700}>Notifications</Typography>
+                  <Button size="small" onClick={handleViewAllNotifications}>View All</Button>
+                </Box>
+                {notificationLoading ? (
+                  <Box sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">Loading...</Typography>
+                  </Box>
+                ) : notifications.length === 0 ? (
+                  <Box sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">No notifications</Typography>
+                  </Box>
+                ) : (
+                  notifications.map((notification) => (
+                    <MenuItem
+                      key={notification._id}
+                      onClick={() => {
+                        if (!notification.read) {
+                          handleMarkAsRead(notification._id);
+                        }
+                        handleNotificationClose();
+                        if (notification.relatedId && notification.relatedType) {
+                          navigate(`/assignments/${notification.relatedId}`);
+                        }
+                      }}
+                      sx={{
+                        bgcolor: notification.read ? 'transparent' : 'action.hover',
+                        py: 1.5,
+                        px: 2
+                      }}
+                    >
+                      <ListItemIcon>
+                        <NotificationsIcon fontSize="small" color={notification.read ? 'disabled' : 'primary'} />
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={
+                          <Typography variant="body2" fontWeight={notification.read ? 'normal' : 'bold'}>
+                            {notification.title}
+                          </Typography>
+                        }
+                        secondary={
+                          <Box>
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              {notification.message}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(notification.createdAt).toLocaleString()}
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                    </MenuItem>
+                  ))
+                )}
+              </Menu>
               <Button color="inherit" sx={{ fontWeight: 500 }} onClick={() => setOpenPasswordModal(true)}>Profile</Button>
             </Stack>
           </Box>
@@ -393,6 +525,81 @@ const DashboardPage = () => {
           <Stack direction="row" spacing={2} sx={{ ml: 4 }}>
             <Button component={RouterLink} to="/dashboard" color="primary" sx={{ fontWeight: 700, borderBottom: '2px solid', borderColor: 'primary.main', borderRadius: 0 }}>Dashboard</Button>
             <Button component={RouterLink} to="/assignments" color="inherit" sx={{ fontWeight: 500 }}>Assignments</Button>
+            <Badge badgeContent={unreadCount} color="error">
+              <Button 
+                onClick={handleNotificationClick}
+                color="inherit" 
+                sx={{ fontWeight: 500 }} 
+                startIcon={<NotificationsIcon />}
+              >
+                Notifications
+              </Button>
+            </Badge>
+            <Menu
+              anchorEl={notificationAnchorEl}
+              open={Boolean(notificationAnchorEl)}
+              onClose={handleNotificationClose}
+              PaperProps={{
+                sx: { width: 400, maxHeight: 500 }
+              }}
+              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            >
+              <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
+                <Typography variant="h6" fontWeight={700}>Notifications</Typography>
+                <Button size="small" onClick={handleViewAllNotifications}>View All</Button>
+              </Box>
+              {notificationLoading ? (
+                <Box sx={{ p: 2, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">Loading...</Typography>
+                </Box>
+              ) : notifications.length === 0 ? (
+                <Box sx={{ p: 2, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">No notifications</Typography>
+                </Box>
+              ) : (
+                notifications.map((notification) => (
+                  <MenuItem
+                    key={notification._id}
+                    onClick={() => {
+                      if (!notification.read) {
+                        handleMarkAsRead(notification._id);
+                      }
+                      handleNotificationClose();
+                      if (notification.relatedId && notification.relatedType) {
+                        navigate(`/assignments/${notification.relatedId}`);
+                      }
+                    }}
+                    sx={{
+                      bgcolor: notification.read ? 'transparent' : 'action.hover',
+                      py: 1.5,
+                      px: 2
+                    }}
+                  >
+                    <ListItemIcon>
+                      <NotificationsIcon fontSize="small" color={notification.read ? 'disabled' : 'primary'} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={
+                        <Typography variant="body2" fontWeight={notification.read ? 'normal' : 'bold'}>
+                          {notification.title}
+                        </Typography>
+                      }
+                      secondary={
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            {notification.message}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {new Date(notification.createdAt).toLocaleString()}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  </MenuItem>
+                ))
+              )}
+            </Menu>
             <Button color="inherit" sx={{ fontWeight: 500 }} onClick={() => setOpenPasswordModal(true)}>Profile</Button>
           </Stack>
         </Box>

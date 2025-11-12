@@ -316,7 +316,7 @@ export const submitAssignment = async (req: Request, res: Response): Promise<voi
       }));
     }
 
-    if (report.score >= 0.8 && assignment.createdBy) {
+    if (report.score >= 0.8) {
       let matchedStudentName = 'another student';
 
       if (report.matches[0]) {
@@ -328,10 +328,23 @@ export const submitAssignment = async (req: Request, res: Response): Promise<voi
         }
       }
 
+      // Notify teacher (only if assignment has a creator)
+      if (assignment.createdBy) {
+        await Notification.create({
+          userId: assignment.createdBy,
+          title: 'Similar submission detected',
+          message: `${req.user.name} submitted work that is highly similar to ${matchedStudentName}.`,
+          type: 'assignment',
+          relatedId: submissionObjectId,
+          relatedType: 'submission'
+        });
+      }
+
+      // Always notify student about their own submission's similarity
       await Notification.create({
-        userId: assignment.createdBy,
-        title: 'Similar submission detected',
-        message: `${req.user.name} submitted work that is highly similar to ${matchedStudentName}.`,
+        userId: req.user.id,
+        title: 'High similarity detected in your submission',
+        message: `Your submission for "${assignment.title}" has ${Math.round(report.score * 100)}% similarity with ${matchedStudentName}'s work. Please review your submission.`,
         type: 'assignment',
         relatedId: submissionObjectId,
         relatedType: 'submission'
@@ -473,18 +486,19 @@ export const updateSubmission = async (req: Request, res: Response): Promise<voi
     if (report.score >= 0.8) {
       const assignmentDoc = await Assignment.findById(submission.assignmentId);
 
-      if (assignmentDoc?.createdBy) {
-        let matchedStudentName = 'another student';
+      let matchedStudentName = 'another student';
 
-        if (report.matches[0]) {
-          const matchedSubmission = await Submission.findById(report.matches[0].submissionId)
-            .populate('studentId', 'name');
-          const matchedStudent = matchedSubmission?.studentId as any;
-          if (matchedStudent?.name) {
-            matchedStudentName = matchedStudent.name;
-          }
+      if (report.matches[0]) {
+        const matchedSubmission = await Submission.findById(report.matches[0].submissionId)
+          .populate('studentId', 'name');
+        const matchedStudent = matchedSubmission?.studentId as any;
+        if (matchedStudent?.name) {
+          matchedStudentName = matchedStudent.name;
         }
+      }
 
+      // Notify teacher (only if assignment has a creator)
+      if (assignmentDoc?.createdBy) {
         await Notification.create({
           userId: assignmentDoc.createdBy,
           title: 'Similar submission updated',
@@ -494,6 +508,16 @@ export const updateSubmission = async (req: Request, res: Response): Promise<voi
           relatedType: 'submission'
         });
       }
+
+      // Always notify student about their own submission's similarity
+      await Notification.create({
+        userId: req.user.id,
+        title: 'High similarity detected in your updated submission',
+        message: `Your updated submission for "${assignmentDoc?.title || 'the assignment'}" has ${Math.round(report.score * 100)}% similarity with ${matchedStudentName}'s work. Please review your submission.`,
+        type: 'assignment',
+        relatedId: submissionObjectId,
+        relatedType: 'submission'
+      });
     }
 
     const updatedSubmission = await Submission.findById(submissionObjectId)
